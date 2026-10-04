@@ -1,0 +1,137 @@
+# ADL Piano MIDI, three contrasting genres, style-conditioned.
+#
+# All ADL tracks are piano-family programs (verified: GM 0/1/2/4/5/7), so
+# track_strategy `merge` is correct here -- it merges layered piano parts, not
+# a band arrangement. Use `densest` only for multi-instrument sources.
+#
+# Genres are selected with data.include_styles rather than by copying files,
+# so the same 117 MB download serves every ablation arm.
+
+# v2: retuned for the RTX 5070. v1 (256 hidden, 2 layers, 100-token context)
+# was sized to make CPU training bearable at ~16 min/epoch. On the GPU that
+# model takes 26 s/epoch, so the CPU compromises are undone below. A new name
+# keeps v1's checkpoint intact -- the shapes differ, so it cannot be resumed.
+name: adl_mixed_lstm_v5
+# v5 = v4 data, trained efficiently: adaptive softmax, LR halving on plateau,
+# patience 3. Measured: 112 s/epoch vs 186 s, 1.2 GB VRAM vs 5.9 GB, and a
+# v4 fine-tune with the LR halved reached val 3.670 (v4's best was 3.682).
+# v4 remains loadable with --set name=adl_mixed_lstm_v4 --set model.output=full.
+# v4 = v3 retrained on the audited data pipeline. The audit found three bugs
+# that changed the training tokens (style tokens silently dropped; the same
+# pitch twice at one onset encoded as chords like "60.60"; duplicate pieces
+# leaking from train into val/test), plus piece endings that were never a
+# training target. v3's checkpoint and cache are left intact for comparison.
+# v3 = v2 with +/-6 transposition instead of +/-3. v2 began overfitting after
+# epoch 10 (train loss kept falling while val rose), so more data is the lever.
+
+data:
+  raw_dir: data/raw/adl
+  include_styles: ["Classical", "Jazz", "Blues"]
+  track_strategy: merge
+  # Map beats through every tempo change, not just the first. 273 of 1,661 ADL
+  # files (16%) change tempo, and with a single tempo 263 of them drifted more
+  # than half a grid step off their notated beats -- the worst by 600+ beats.
+  # Off by default in default.yaml only because turning it on changes tokens.
+  tempo_map: true
+  # 16th-note grid. Measured across 250 pieces: a 0.5 grid does cut <REST> from
+  # 58% of tokens to 34%, but it merges more notes into each onset, and the
+  # resulting chord symbols are so much more diverse that the same vocabulary
+  # budget costs 3x the <UNK> rate (14.1% vs 4.7% at min_freq=3). Low UNK wins;
+  # the rest-heavy sequences are the price.
+  grid: 0.25
+  # A piece is kept only if *every* time signature it uses is allowed, and
+  # classical writing changes metre mid-piece constantly -- restricting to 4/4
+  # alone discarded 899 of 2019 files.
+  time_signatures: ["4/4", "3/4", "2/4"]
+
+augment:
+  # Narrower than the +/-6 default: at ~2000 pieces averaging ~780 notes,
+  # 13 transpositions produce more windows than a CPU can chew through in a
+  # sensible number of epochs. Widen this once you have a GPU.
+  # v3: +/-6 (13 keys per piece, up from 7). v2 at +/-3 overfit after epoch
+  # 10 -- train loss kept falling while val loss rose for 8 epochs -- so the
+  # model was memorising rather than generalising. Covering every key also
+  # stops it tying a musical idea to the few keys a piece happened to be in.
+  transpose_range: [-6, 6]
+
+encoding:
+  scheme: note_chord
+  # Duration in the symbol multiplies every chord by its duration variants:
+  # measured 363,455 distinct symbols with it on, 17,886 with it off.
+  include_duration: false
+  style_tokens: true
+  # 60% of raw symbols occur exactly once and can never be learned, yet each
+  # costs an embedding row and a softmax column. Pruning to >=10 occurrences
+  # sends 4% of tokens to <UNK>, which is a good trade.
+  min_freq: 10
+
+model:
+  # Measured on the RTX 5070 through the real trainer:
+  #
+  #   v1  256h x2L  ctx100  CPU                        ~950 s/epoch  (~8 h / 30 ep)
+  #   v1  256h x2L  ctx100  GPU fp32, batch 128          27 s/epoch
+  #   v2  512h x3L  ctx256  GPU fp32, batch 128       1,392 s/epoch  VRAM overflow
+  #   v2  512h x3L  ctx256  GPU fp32, batch 64           72 s/epoch  <- this
+  #
+  # The 256-token context is the point of v2: 2.56x the musical memory, enough
+  # for about 93 beats (~23 bars of 4/4) -- run-length rests make each token
+  # cover ~0.36 beats. (An earlier comment here said 4-8 bars; that was wrong.)
+  # At batch 128 it does not fit --
+  # the output logits are 128 x 256 x 25,028 floats, 3.3 GB plus as much again
+  # for their gradient, and at 14.8 GB of a 12.2 GB card Windows spills into
+  # system RAM and each epoch takes 20x longer. Batch 64 halves that.
+  #
+  # bf16 would fit batch 128 at 33 s/epoch, but it trains a worse model (val
+  # 5.35 vs 4.80 after one epoch) -- see train._resolve_amp.
+  #
+  # If epochs ever suddenly take minutes, check GPU memory before anything else.
+  seq_len: 256
+  # stride = seq_len / 2: each token is predicted from two different context
+  # lengths, since the first tokens of any window have little history.
+  window_stride: 128
+  hidden_dim: 512
+  num_layers: 3
+  # Adaptive softmax: frequent symbols in a small head, rare ones in narrower
+  # tail clusters. Exact log-probs (sum to 1), 41% faster per batch, and it
+  # never materialises the [B, L, 37k] logits that forced batch 48.
+  output: adaptive
+
+train:
+  # 48, not 64, for v3. The +/-6 vocabulary (37,847 symbols, up from 25,028)
+  # makes the logits 51% bigger. Batch 64 benchmarks at 8.5 GB *allocated*, but
+  # the allocator reserves more on top and other apps (Chrome) share the card:
+  # in the real run nvidia-smi showed 11.6 of 12.2 GB and epoch 1 had not
+  # finished after 9.5 minutes -- the Windows VRAM spill again. Batch 48
+  # measures 6.5 GB at 180 s/epoch, only ~6% slower than 64's 169 s.
+  batch_size: 48
+  # At ~72 s/epoch there is no reason to stop at 30; early stopping ends the
+  # run when validation loss stops improving.
+  epochs: 60
+  # 3, not 8: in every ADL run, once val loss was stale for two epochs it
+  # never recovered, so epochs 4-8 of patience were pure waste (~16 min).
+  patience: 3
+  # Halve the LR the first epoch val stops improving. From v4's epoch-5
+  # checkpoint, one epoch at 5e-4 gave 3.6696 vs 3.6851 at a constant 1e-3.
+  lr_schedule: plateau
+
+generate:
+  # Tuned on v3 (epoch 6, val 3.714). 12 samples per row, seed 4401, scored
+  # against 24 real Classical/Jazz/Blues excerpts cropped to the same length:
+  #
+  #                       in-key  distinct-3  rhythm  note-repeat
+  #   real music           0.849     0.599     0.444     0.040
+  #   v3  T=0.9            0.851     0.790     0.490     0.045   <- this
+  #   v3  T=0.85 top_p=.95 0.917     0.476     0.357     0.106
+  #   v3  T=0.8  top_p=.95 0.923     0.499     0.284     0.098
+  #   v2  T=0.9            0.819     0.857     0.440     0.040
+  #
+  # Truncation (top_p) keeps output in key, but on v2/v3 the model is tonal
+  # enough without it, and truncating more than doubles the repeated-note rate
+  # -- the "monotonous" sound. The earlier T=0.85/top_p=0.95 default was chosen
+  # on in-key, distinct-3 and rhythm only; adding note-repeat reversed it.
+  #
+  # v2 vs v3 at the same T=0.9 is a tie within noise: +/-6 transposition did not
+  # measurably improve val loss (3.714 vs 3.710) or samples. Only the weak v1
+  # checkpoint needed truncation (at T=0.9 it scored in-key 0.686).
+  temperature: 0.9
+  top_p: 0.0

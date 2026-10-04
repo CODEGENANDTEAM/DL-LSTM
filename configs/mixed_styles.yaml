@@ -1,0 +1,15 @@
+# Ablation arm: conditioned mixing across corpora.
+#
+# Unconditioned mixing of incompatible styles produces an average of their
+# grammars -- coherent in none of them. The style token gives the model the
+# missing signal about which style it is currently in. Point `raw_dir` at a
+# directory whose immediate subdirectories are the style labels.
+
+name: mixed_styles_lstm
+
+data:
+  raw_dir: data/raw/mixed
+
+encoding:
+  scheme: note_chord
+  style_tokens: true

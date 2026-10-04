@@ -1,0 +1,16 @@
+# Core
+torch>=2.6.0
+numpy>=1.26
+pyyaml>=6.0
+tqdm>=4.66
+
+# MIDI I/O
+pretty_midi>=0.2.10
+
+# Optional: MP3 -> MIDI transcription for inference-time seeding only.
+# Never used to build training data. Install separately:
+#   pip install basic-pitch
+# basic-pitch>=0.4.0
+
+# Optional: audio rendering of generated MIDI
+#   pip install fluidsynth  (plus a soundfont)

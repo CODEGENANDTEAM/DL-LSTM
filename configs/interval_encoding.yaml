@@ -1,0 +1,17 @@
+# Ablation arm: interval ("Differential Music") encoding.
+#
+# Transposition-invariant by construction, so the vocabulary is far smaller and
+# augmentation buys less. Watch in_key_percentage in the eval report -- this
+# scheme is known to drift out of key because pitch is reconstructed by
+# accumulating intervals, so errors compound.
+
+name: interval_lstm
+
+augment:
+  # Transposition is close to a no-op under interval encoding; keeping a narrow
+  # range only to match the baseline's data volume.
+  transpose_range: [-2, 2]
+
+encoding:
+  scheme: interval
+  include_duration: true

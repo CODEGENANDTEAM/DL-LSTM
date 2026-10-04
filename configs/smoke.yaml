@@ -1,0 +1,29 @@
+# Smoke test: tiny everything, runs on the synthetic corpus in seconds.
+# Not a real experiment -- this exists to prove the plumbing works end to end
+# before you spend hours training on a real dataset.
+
+name: smoke
+
+data:
+  raw_dir: data/raw/dummy
+  min_events: 20
+  val_split: 0.2
+  test_split: 0.1
+
+augment:
+  transpose_range: [-2, 2]
+
+model:
+  seq_len: 16
+  embed_dim: 64
+  hidden_dim: 128
+  num_layers: 2
+
+train:
+  batch_size: 32
+  epochs: 3
+  patience: 3
+
+generate:
+  num_tokens: 60
+  num_samples: 2

@@ -1,0 +1,18 @@
+# Comparison arm: same data, same encoding, self-attention instead of recurrence.
+#
+# The point of the LSTM-vs-Transformer table in the report. Only `model.arch`
+# and the attention hyperparameters differ from the baseline -- keep everything
+# else identical or the comparison means nothing.
+
+name: baseline_transformer
+
+model:
+  arch: transformer
+  embed_dim: 256
+  hidden_dim: 512
+  num_layers: 4
+  num_heads: 8
+  dropout: 0.2
+
+train:
+  lr: 0.0003

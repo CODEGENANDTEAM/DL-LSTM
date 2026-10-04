@@ -1,0 +1,209 @@
+# Baseline experiment: note/chord encoding + 3-layer LSTM on classical piano.
+# Every experiment is a copy of this file with fields overridden. The config
+# hash is stored in the checkpoint so a model can never be paired with the
+# wrong vocabulary.
+
+name: baseline_lstm_notechord
+
+data:
+  raw_dir: data/raw/classical_piano
+  processed_dir: data/processed
+  # Quantization grid in quarter-note beats. 0.25 = 16th notes.
+  grid: 0.25
+  # Drop notes shorter than this (in beats) -- transcription/perf artifacts.
+  min_duration: 0.125
+  # Skip pieces with fewer than this many events after filtering.
+  min_events: 50
+  # Keep only these time signatures; empty list = keep all.
+  time_signatures: ["4/4"]
+  # Keep only these top-level style directories (raw_dir/<style>/...);
+  # empty list = keep all. Lets one downloaded corpus serve several
+  # experiments without copying files around.
+  include_styles: []
+  # Merge all tracks into one stream, or keep only the densest track.
+  track_strategy: merge        # merge | densest
+  val_split: 0.1
+  test_split: 0.1
+  split_seed: 1337
+
+augment:
+  enabled: true
+  # Transpose training pieces by every offset in this inclusive range.
+  transpose_range: [-6, 6]
+  # Drop a transposition if any note leaves this MIDI range.
+  pitch_range: [21, 108]
+
+encoding:
+  # SEAM 1 -- one of: note_chord | interval | pitch_duration
+  scheme: note_chord
+  # Include duration as part of each symbol (note_chord / pitch_duration).
+  include_duration: true
+  # Prepend a <STYLE:x> token to each sequence for conditioned mixing.
+  style_tokens: false
+  # Collapse a run of silence into one <REST:k> token instead of k <REST>s.
+  # Measured on the ADL corpus: one token per grid step made 56% of training
+  # tokens (and 75% of *generated* tokens) <REST>, so most of the model's
+  # capacity went on predicting silence and every sample came out with the same
+  # note-rest-rest-rest pulse. Set false for the one-token-per-step ablation
+  # arm; the encoding is then byte-identical to the pre-run-length one.
+  run_length_rests: true
+  # Largest k a single <REST:k> may carry; longer gaps decompose greedily into
+  # several tokens. 16 is one bar on a 0.25 grid. This is the vocabulary bound:
+  # uncapped, a single 400-step gap mints a <REST:400> that occurs once, can
+  # never be learned, and still costs an embedding row and a softmax column.
+  max_rest_run: 16
+  # Long-tail pruning. On real performance data most distinct chord symbols
+  # occur once and can never be learned, but each still costs an embedding row
+  # and a softmax column. Symbols below min_freq (or outside the max_size most
+  # frequent) map to <UNK>. 1 / 0 disables.
+  min_freq: 1
+  max_size: 0
+
+model:
+  # SEAM 2 -- one of: lstm | transformer
+  arch: lstm
+  seq_len: 100
+  # Emit a training window every N tokens instead of every token. Stride 1
+  # is maximum data, but consecutive windows overlap by seq_len-1 and carry
+  # nearly the same gradient; raising this is the cheapest way to cut epoch
+  # time. Lives here rather than under `data` because, like seq_len, it is
+  # applied when windows are built and does not affect the cached tokens --
+  # putting it in a hashed section would invalidate the cache for nothing.
+  window_stride: 1
+  embed_dim: 256
+  hidden_dim: 512
+  num_layers: 3
+  dropout: 0.3
+  # transformer-only, ignored by lstm
+  num_heads: 8
+  # Output layer (lstm only): full | adaptive. `full` is a Linear + softmax
+  # over every symbol at every position -- at V=37,020 the heaviest op in the
+  # model and what fills VRAM. `adaptive` is nn.AdaptiveLogSoftmaxWithLoss with
+  # clusters ordered by training-split frequency (the permutation is stored in
+  # the checkpoint; the vocabulary itself is not reordered). Exact
+  # log-probabilities, sampled from like logits. MEASURED on v4 (RTX 5070,
+  # batch 48, same seed and batch order, val scored in fp32):
+  #                     ms/batch  VRAM alloc  val@700 steps  val@1 epoch (2 seeds)
+  #   full                 98       5.91 GB      4.969        4.389 / 4.441
+  #   adaptive             58       1.15 GB      4.456        4.039 / 4.043
+  # Real trainer, one v4 epoch: 186 s -> 112 s. Batch 256 fits in 4.7 GB
+  # (full: batch 64 already reserves 10.0 GB and spills with a desktop open).
+  # Opt-in rather than default because it is a different parameterisation,
+  # so an existing full checkpoint cannot switch to it, and nobody has yet
+  # trained it to convergence. It learns faster early; whether it also
+  # converges below full's 3.68 is still unmeasured. generate.py reads the
+  # head shape from the checkpoint, so sampling needs no extra flag.
+  output: full
+  # Frequency-rank boundaries of the adaptive clusters: head = the 2,000 most
+  # common symbols (89% of training targets), tail 1 = ranks 2k-10k (6.9%),
+  # tail 2 = the rest (4.2%, symbols seen < 46 times). Derivation in
+  # src/models/lstm.py. Clamped automatically for small vocabularies.
+  adaptive_cutoffs: [2000, 10000]
+  # Each tail cluster projects to hidden/2 / div_value^k dims (64, then 16).
+  adaptive_div_value: 4.0
+
+train:
+  batch_size: 64
+  epochs: 60
+  lr: 0.001
+  optimizer: adam
+  grad_clip: 5.0
+  weight_decay: 0.0
+  # Stop if val loss has not improved for this many epochs. 3, not 8: in
+  # every ADL run val bottomed out and then rose for the rest of the run
+  # without ever coming back once it had been stale for 2 epochs --
+  #   v2 best epoch 10, then 8 epochs worse;  v3 best 6, then 8 worse;
+  #   v4 best 5, then 6 worse (stopped by hand). Only v1 (smaller, CPU) ever
+  #   improved after a stale epoch, and that was after ONE (epochs 14 -> 15).
+  # At ~200 s/epoch patience 8 spent 16+ minutes per run confirming what
+  # epoch best+3 already showed. (configs/adl_mixed.yaml also uses 3.)
+  patience: 3
+  # An epoch counts as an improvement only if val beats the best by more than
+  # this. 0 = any decrease (the old rule). 0.002-0.005 stops the late-run
+  # "3.6846 vs 3.6852" creep from resetting patience.
+  min_delta: 0.0
+  # LR schedule: none | plateau | cosine. See train.build_scheduler.
+  #   plateau: ReduceLROnPlateau on val loss -- LR *= lr_factor after
+  #            lr_patience epochs without improvement (one step per epoch).
+  #   cosine:  per-batch cosine decay from lr to lr * min_lr_ratio over
+  #            `epochs` epochs (set epochs to the run length you expect).
+  # MEASURED (from v4's epoch-5 best.pt, one more epoch): LR 1e-3 -> val
+  # 3.6851 (v4's own epoch 6 was 3.6862); LR halved to 5e-4 -> 3.6696, a new
+  # best below v4's 3.6816. That is what plateau with lr_patience 0 does one
+  # epoch later. Recommended for the next run; not default because it changes
+  # results and has not been run end to end.
+  lr_schedule: none
+  lr_factor: 0.5
+  lr_patience: 0
+  min_lr_ratio: 0.05
+  num_workers: 0            # keep 0 on Windows
+  device: auto              # auto | cuda | cpu
+  # Mixed precision: off (fp32) | bf16 | fp16. OFF BY DEFAULT because bf16 measurably
+  # breaks this model: after one epoch on ADL, val loss 5.35 vs 4.80 in fp32,
+  # stalled at roughly the token-frequency baseline. It halves memory and is
+  # ~25% faster, but it trains the wrong model. See train._resolve_amp.
+  # fp16 = autocast float16 + GradScaler, loss/softmax in fp32. MEASURED:
+  #   76 ms/batch vs 98 (-22%), 4.85 GB vs 5.91 allocated. Parity from v4's
+  #   epoch-5 checkpoint, 700 steps: val 3.6852 vs 3.6843 (data-order noise
+  #   0.0005; bf16 3.6872). From scratch: 700 steps 4.749 vs 4.969; 1 epoch
+  #   4.151 / 4.487 vs 4.389 / 4.441 (seed noise ~0.05 at this point). No
+  #   sign of bf16's failure, but not default: it changes every run's numbers,
+  #   and once model.output=adaptive is on it saves only ~1 ms/batch (57 vs 58).
+  amp: off
+  # TF32 tensor-core math for fp32: default | on | off. `default` leaves torch's
+  # defaults (cuDNN/LSTM may use TF32, plain matmuls may not) -- what every run
+  # so far used. `on` adds matmuls (the output projection); `off` is strict
+  # IEEE everywhere. MEASURED (ms/batch; val vs same-seed baseline):
+  #   default 98 | on 85 (-13%) | off 106 (+8%)
+  #   from v4's epoch-5 checkpoint, 700 steps: on +0.0006, off +0.0010
+  #   from scratch: on +0.05 @700 steps, +0.14 / -0.02 @1 epoch (2 seeds)
+  # `on` stays opt-in (mixed evidence from scratch); `off` only costs time.
+  tf32: default
+  # torch.compile the loss function. Needs Triton, which this Windows venv
+  # does not have; on failure it warns once and trains eagerly.
+  # MEASURED: fails on this venv ("Cannot find a working triton
+  # installation"), falls back to eager at the same 98 ms/batch.
+  compile: false
+  checkpoint_dir: runs
+  seed: 1337
+  # Continue from the newest checkpoint in checkpoint_dir/<name> instead of
+  # starting over. A long CPU run will eventually be interrupted, and without
+  # this every finished epoch is thrown away. Refuses to resume a checkpoint
+  # trained under different data/encoding settings.
+  resume: false
+
+generate:
+  num_tokens: 500
+  temperature: 0.9
+  top_k: 0                  # 0 = disabled
+  top_p: 0.0                # 0 = disabled
+  seed_source: dataset      # dataset | midi | audio
+  seed_path: null           # used when seed_source is midi/audio
+  # Which processed split a `dataset` primer is drawn from: train | val | test.
+  # val, NOT train: v3 overfit after epoch 6 (train loss kept falling while val
+  # loss rose), and primed with a training excerpt the model can recite the
+  # piece it memorised -- output that sounds good for the wrong reason.
+  # Held-out primers measure what the model generates, not what it remembers;
+  # use train only to measure copying (see evaluate.copy_metrics).
+  seed_split: val
+  output_dir: data/generated
+  num_samples: 5
+  # RNG seed for sampling AND for choosing the dataset seed windows.
+  # null = fresh entropy each run (the drawn value is printed, so any run can
+  # still be reproduced afterwards with --seed). An int makes the whole run
+  # bit-reproducible; sample i runs on seed+i, so the N outputs still differ
+  # from one another. Deliberately NOT defaulted to train.seed -- that would
+  # make every generate run start from the same handful of dataset windows.
+  seed: null
+  # How to assign note lengths when the encoding carries none
+  # (encoding.include_duration: false): `next_onset` lets each note ring until
+  # the next one starts, capped at max_fill_beats; `grid` is the raw decoder
+  # output, a 16th note each -- staccato, and the main reason such output sounds
+  # random. Render-time only, so it never invalidates a checkpoint.
+  duration_fill: next_onset
+  max_fill_beats: 4.0
+
+evaluate:
+  # Reference corpus for distribution-distance metrics; defaults to the
+  # training split when null.
+  reference: null

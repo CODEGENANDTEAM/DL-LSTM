@@ -1,0 +1,127 @@
+# ADL Piano MIDI, Classical/Jazz/Blues, style-conditioned -- EVENT encoding.
+#
+# Identical corpus, splits, transposition, tempo map and style tokens to
+# adl_mixed.yaml (v4); only the encoding and the sequence geometry change, so
+# the two runs are a clean A/B on the encoding. Configs layer over
+# default.yaml only (not over each other), hence the repeated sections.
+#
+# WHY. note_chord makes each distinct set of simultaneous pitches one symbol:
+# 37,020 symbols after pruning on this corpus, ~4-5% of tokens still <UNK>, an
+# output softmax that dominates training cost and VRAM, and no durations (with
+# them on: 363k symbols). The event scheme (src/data/encode.py EventEncoder)
+#
+#     T{k}  advance k grid steps   N{p}  note onset   D{k}  its duration
+#
+# has a fixed, fully declared vocabulary: 16 T + 128 N + 32 D = 176 symbols,
+# + 5 reserved + 3 style tokens = 184, never <UNK>, nothing pruned. Durations
+# round-trip exactly, so generation no longer guesses them with
+# decode.fill_durations.
+#
+# Measured on all 1,654 parsed ADL Classical/Jazz/Blues pieces (1.88M notes),
+# encoding each piece as prepare_data would (no augmentation):
+#
+#                           note_chord (v4)   event
+#   vocabulary                  37,020         184
+#   tokens / piece (mean)          847        2,816
+#   tokens / piece (median)        680        2,178
+#   tokens / beat                 2.750       9.139
+#   event / note_chord tokens            3.32x pooled (per-piece median 3.09,
+#                                        p10 2.12, p90 4.40; Classical 3.27,
+#                                        Jazz 3.30, Blues 3.84)
+#   <UNK> tokens                  ~4-5%          0
+#   durations exact                 51.6%*     99.92%
+#   durations within 1/2 beat       84.5%*     99.94%
+#     * note_chord decode + fill_durations(max_beats=4), what generate does now
+#
+# The only loss is the caps: 0.077% of notes are longer than 32 steps and are
+# clamped to 2 bars; 0.28% of onsets follow a gap longer than 16 steps, which
+# costs one extra T token each (+0.09% tokens) and loses nothing.
+name: adl_events_lstm
+
+data:
+  raw_dir: data/raw/adl
+  include_styles: ["Classical", "Jazz", "Blues"]
+  track_strategy: merge
+  # Same as adl_mixed: 16% of ADL files change tempo; see that file.
+  tempo_map: true
+  # 16th grid, as v4. The event vocabulary no longer depends on the grid's
+  # chord diversity (the reason adl_mixed rejected 0.5), only T/D cap in steps.
+  grid: 0.25
+  time_signatures: ["4/4", "3/4", "2/4"]
+
+augment:
+  # +/-6 as v3/v4: every key, and the event vocabulary covers all of them.
+  transpose_range: [-6, 6]
+
+encoding:
+  scheme: event
+  # Ignored by the event encoder (durations are always in the stream; it
+  # reports include_duration=True so generate.py skips fill_durations). Set
+  # true here only so the config reads truthfully.
+  include_duration: true
+  style_tokens: true
+  # T{k} cap. 16 steps = one 4/4 bar. Longer gaps split greedily (T16 T16 T8):
+  # 0.28% of onsets, +0.09% tokens. At 8 it would be 1.56% of onsets.
+  max_time_shift: 16
+  # D{k} cap. 32 steps = two 4/4 bars. Clamps 0.077% of notes (1,447 of
+  # 1.88M); 16 would clamp 0.70%, 64 would clamp 0.007% for +32 symbols.
+  max_duration_steps: 32
+  # Off. With 8 bins every note gains a V token: +40.4% sequence length for
+  # dynamics the MIDI renderer barely uses. Revisit once the base run is in.
+  velocity_bins: 0
+  # Moot for T/N/D: encoder-declared symbols are exempt from pruning. Only the
+  # three <STYLE:x> tokens come from the data, and each occurs hundreds of times.
+  min_freq: 1
+
+model:
+  # ONE WINDOW MUST COVER AT LEAST AS MUCH MUSIC AS v4's 256 note_chord tokens.
+  #
+  #   v4 window        256 tokens / 2.750 tokens per beat = 93.1 beats
+  #   same music       93.1 beats x 9.139 tokens per beat = 850.8 event tokens
+  #   (equivalently    256 x 3.323 pooled token ratio     = 850.7)
+  #
+  # Measured directly: over the 8,519 v4 windows (256 tokens, stride 128) the
+  # same stretch of music needs mean 857, median 824, p75 987, p90 1,171 event
+  # tokens. 896 is the next multiple of 64 above the mean: 5% more music than
+  # v4 on average, and it covers 62.7% of individual v4 windows in full (832
+  # would cover 51.6%, 1,024 79.1%). At stride seq_len/2 every token is still
+  # processed twice per epoch whatever seq_len is, so this choice moves memory
+  # per batch and context, not per-epoch FLOPs.
+  # Bars scale with beats, so the same 896 holds for 4/4, 3/4 and 2/4 pieces.
+  seq_len: 896
+  # seq_len / 2, the same half-window overlap as v4 (256/128): each token is
+  # predicted from two different context lengths.
+  window_stride: 448
+  hidden_dim: 512
+  num_layers: 3
+
+train:
+  # Same as v4 for a like-for-like timing. v4's 48 was forced by the 37k-wide
+  # logits (48 x 256 x 37,847 fp32 ~ 1.9 GB, doubled for the gradient); at
+  # 48 x 896 x 184 they are ~32 MB, so VRAM now goes to LSTM activations
+  # instead, and a larger batch is likely to fit -- measure before raising it.
+  #
+  # ESTIMATE, not a measurement (multiply-accumulates per token, forward):
+  #   LSTM  4(E.H + H.H) + 2 x 4(H.H + H.H), E=256 H=512      = 5.77M
+  #   head  fc1 512x256 + fc2 256xV                           = 0.13M + 256V
+  #   note_chord V=37,020: 15.38M/token    event V=184: 5.95M/token (0.39x)
+  #   x 3.32 tokens for the same music -> event is ~1.28x the note_chord
+  #   compute per epoch (the simpler 3x4(E.H+H.H) + 128V estimate gives ~1.67x).
+  # So per-epoch FLOPs go UP, by ~28-67%, and the LSTM's 3.5x more serial time
+  # steps per window may cost more wall-clock than FLOPs suggest. What goes
+  # down is memory (logits ~60x smaller per batch) and the softmax. Time it.
+  # 96, measured on the RTX 5070: 181 s/epoch at 4.7 GB (batch 48: 332 s at
+  # 2.5 GB; batch 128: 147 s at 6.2 GB). The 184-symbol vocabulary leaves room
+  # the note_chord runs never had; 96 is the conservative step up.
+  batch_size: 96
+  epochs: 60
+  patience: 3
+  lr_schedule: plateau
+
+generate:
+  # 500 note_chord tokens ~ 182 beats; the same music is 500 x 3.32 ~ 1,660
+  # event tokens.
+  num_tokens: 1664
+  # Carried over from v4's tuning on note_chord; retune on this model.
+  temperature: 0.9
+  top_p: 0.0
