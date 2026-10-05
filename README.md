@@ -138,9 +138,12 @@ sequence for debugging.
 ## Real data
 
 The main experiment uses the ADL Piano MIDI dataset (11,073 files in 18 genre
-folders; `adl-piano-midi.zip`, not committed). Unzip it to `data/raw/adl/` so
-each genre is a subfolder; `configs/adl_mixed.yaml` selects Classical, Jazz and
-Blues with `data.include_styles`.
+folders), committed under `data/raw/adl/` with one subfolder per genre;
+`configs/adl_mixed.yaml` selects Classical, Jazz and Blues with
+`data.include_styles`. The processed token caches (`data/processed/`) and
+generated samples (`data/generated/`) are committed too, so `generate` works
+without re-running `prepare`. One cache file is over 100 MB and is stored with
+Git LFS -- install it (`git lfs install`) before cloning.
 
 Other corpora: drop MIDI into `data/raw/<corpus>/` and point `data.raw_dir` at it.
 
