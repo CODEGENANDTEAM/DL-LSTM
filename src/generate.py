@@ -738,7 +738,11 @@ def generate(cfg: Config, checkpoint_dir: Optional[Any] = None) -> List[Path]:
         if fill == "next_onset" and not getattr(encoder, "include_duration", True):
             piece = fill_durations(piece, max_beats=float(gen_cfg.get("max_fill_beats", 4.0)))
 
-        stem = f"{cfg.name}_t{temperature:.2f}_{index:02d}"
+        # The run seed makes the name unique per run (the old
+        # "<name>_t0.90_00" was reused by every run, so each generate silently
+        # overwrote the last one's samples) and is exactly what --seed needs
+        # to reproduce this file.
+        stem = f"{cfg.name}_T{temperature:.2f}_seed{run_seed}_{index:02d}"
         midi_path = write_midi(piece, out_dir / f"{stem}.mid", program=program)
         # Symbols next to the audio: when a sample sounds wrong this is the
         # only way to tell a decoding bug from a modelling one.

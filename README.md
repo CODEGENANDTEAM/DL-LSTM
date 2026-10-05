@@ -135,6 +135,13 @@ venv\Scripts\python.exe scripts/run_generate.py  --config configs/smoke.yaml
 Output lands in `data/generated/` as `.mid` plus a `.txt` of the raw symbol
 sequence for debugging.
 
+Files are named `<name>_T<temperature>_seed<run seed>_<index>.mid`, e.g.
+`adl_mixed_lstm_v5_T0.90_seed4401_00.mid`, so a new run never overwrites an
+earlier one, and passing `--seed 4401` reproduces that run exactly. Samples made
+before this scheme use the older `<name>_t0.90_<index>` names (their seeds were
+not recorded); `adl_mixed_lstm_v6_t0.90_run2_*` is a second v6 run that the old
+naming had overwritten.
+
 ## Real data
 
 The main experiment uses the ADL Piano MIDI dataset (11,073 files in 18 genre
