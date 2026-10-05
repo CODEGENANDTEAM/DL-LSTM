@@ -1,0 +1,19 @@
+{
+  "config_hash": "55f22b0b43",
+  "sections": [
+    "data",
+    "augment",
+    "encoding"
+  ],
+  "encoding": {
+    "scheme": "note_chord",
+    "include_duration": true,
+    "style_tokens": true
+  },
+  "vocab_size": 363455,
+  "sequences": {
+    "train": 5697,
+    "val": 108,
+    "test": 108
+  }
+}

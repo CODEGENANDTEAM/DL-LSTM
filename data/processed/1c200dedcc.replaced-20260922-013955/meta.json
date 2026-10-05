@@ -1,0 +1,23 @@
+{
+  "config_hash": "1c200dedcc",
+  "sections": [
+    "data",
+    "augment",
+    "encoding"
+  ],
+  "encoding": {
+    "scheme": "note_chord",
+    "include_duration": true,
+    "style_tokens": false,
+    "run_length_rests": true,
+    "max_rest_run": 16,
+    "min_freq": 1,
+    "max_size": 0
+  },
+  "vocab_size": 402,
+  "sequences": {
+    "train": 85,
+    "val": 5,
+    "test": 2
+  }
+}

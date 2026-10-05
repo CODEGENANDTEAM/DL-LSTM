@@ -1,0 +1,31 @@
+{
+  "config_hash": "4af7dab1bb",
+  "sections": [
+    "data",
+    "augment",
+    "encoding"
+  ],
+  "encoding": {
+    "scheme": "event",
+    "include_duration": true,
+    "style_tokens": true,
+    "run_length_rests": true,
+    "max_rest_run": 16,
+    "min_freq": 1,
+    "max_size": 0,
+    "max_time_shift": 16,
+    "max_duration_steps": 32,
+    "velocity_bins": 0
+  },
+  "vocab_size": 184,
+  "sequences": {
+    "train": 15745,
+    "val": 162,
+    "test": 161
+  },
+  "pipeline_version": 2,
+  "raw_fingerprint": {
+    "files": 2019,
+    "sha1": "615de84628e1ccea4e4b3799cd52e53db2b504f8"
+  }
+}

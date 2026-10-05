@@ -1,0 +1,28 @@
+{
+  "config_hash": "1c200dedcc",
+  "sections": [
+    "data",
+    "augment",
+    "encoding"
+  ],
+  "encoding": {
+    "scheme": "note_chord",
+    "include_duration": true,
+    "style_tokens": false,
+    "run_length_rests": true,
+    "max_rest_run": 16,
+    "min_freq": 1,
+    "max_size": 0
+  },
+  "vocab_size": 452,
+  "sequences": {
+    "train": 85,
+    "val": 5,
+    "test": 2
+  },
+  "pipeline_version": 2,
+  "raw_fingerprint": {
+    "files": 24,
+    "sha1": "c5a9b1eee3c59a6846b242b59131c34c31f8551b"
+  }
+}
