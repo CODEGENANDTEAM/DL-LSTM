@@ -20,6 +20,8 @@ Two swappable seams make the experiments a config change rather than a rewrite:
 
 - [`docs/CODE_GUIDE.md`](docs/CODE_GUIDE.md) -- full walkthrough of the code,
   design decisions, results and likely viva questions.
+- [`docs/guide/Quick_Reference.pdf`](docs/guide/Quick_Reference.pdf) -- 2-page
+  summary: the pipeline end to end, every parameter and what its value means.
 - [`docs/guide/Code_Guide.pdf`](docs/guide/Code_Guide.pdf) -- 12-page illustrated
   guide split into five presenter sections, plus corrections for the slide deck.
   Source: `docs/guide/code_guide.html` (print to PDF from a browser).

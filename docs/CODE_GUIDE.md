@@ -4,8 +4,16 @@ A complete walkthrough of this codebase for someone who has never opened it.
 Read it top to bottom and you should be able to answer any question about what
 the code does, why it is built this way, and what the results mean.
 
-An illustrated version split into five presenter sections, with diagrams, is in
-[`guide/Code_Guide.pdf`](guide/Code_Guide.pdf) (source: `guide/code_guide.html`).
+Companion documents in [`guide/`](guide/):
+
+- [`Quick_Reference.pdf`](guide/Quick_Reference.pdf) -- **2 pages**: the whole
+  pipeline end to end, every parameter with its value and meaning, and what the
+  result numbers mean. Source: `guide/quick_reference.html`.
+- [`Code_Guide.pdf`](guide/Code_Guide.pdf) -- 12 pages with diagrams, split into
+  five presenter sections. Source: `guide/code_guide.html`.
+
+To rebuild a PDF after editing its HTML, open the HTML in Edge or Chrome and
+print to PDF (A4, no headers/footers).
 
 ---
 
@@ -226,7 +234,11 @@ Adaptive softmax over 37,020 symbols
    That is 26–34× faster than re-reading the whole window every step.
 5. Decode the symbols back into notes and write MIDI.
 
-Every run prints its seed, so any sample can be reproduced with `--seed N`.
+Every run prints its seed, and the seed is in every file name:
+`<name>_T<temperature>_seed<seed>_<index>.mid`, e.g.
+`adl_mixed_lstm_v5_T0.90_seed4401_00.mid`. A new run therefore never overwrites
+an earlier one, and `--seed 4401` reproduces that run exactly. (Files named
+`<name>_t0.90_<index>` predate this scheme; their seeds were not recorded.)
 
 ### Stage 9 — Audio (`src/decode.py`, `scripts/render_audio.py`)
 
@@ -286,10 +298,12 @@ not a rewrite.
 
 ---
 
-## 5. Configuration
+## 5. Configuration and every parameter
 
 One YAML file describes an experiment. `configs/default.yaml` holds every
-setting with a comment explaining it; other configs override parts of it.
+setting with a comment explaining it; other configs override only what differs.
+Any value can be changed for one run without editing a file:
+`--set section.key=value` (repeatable).
 
 | Config | What it is |
 |---|---|
@@ -298,24 +312,125 @@ setting with a comment explaining it; other configs override parts of it.
 | `smoke.yaml` | Tiny synthetic run used by `main.py demo` |
 | `transformer.yaml`, `interval_encoding.yaml`, `mixed_styles.yaml` | Comparison arms |
 
-Settings worth knowing:
+The `data`, `augment` and `encoding` sections are hashed into the cache folder
+name (`data/processed/<hash>/`), so changing any of them builds a new cache.
+`model`, `train` and `generate` never invalidate the cache.
 
-| Setting | Value here | Why |
+"v5" below is the value the final model used (`adl_mixed.yaml`, falling back to
+`default.yaml`).
+
+### `data` -- what music is read and how
+
+| Key | v5 | Meaning |
 |---|---|---|
-| `data.grid` | 0.25 | 16th-note quantization |
-| `data.tempo_map` | true | Follow tempo changes |
-| `augment.transpose_range` | [-6, 6] | All 13 keys |
-| `encoding.scheme` | note_chord | Seam 1 |
-| `encoding.min_freq` | 10 | Prune the long tail |
-| `model.seq_len` | 256 | About 93 beats, roughly 23 bars of memory |
-| `model.window_stride` | 128 | Half-window overlap |
-| `model.output` | adaptive | Faster, less memory |
-| `train.batch_size` | 48 | Fits the 12 GB card |
-| `train.patience` | 3 | Stop early; it never recovers |
-| `generate.temperature` | 0.9 | Measured closest to real music |
-| `generate.seed_split` | val | Prime from held-out music |
+| `raw_dir` | `data/raw/adl` | Folder of MIDI files; its subfolders are style labels |
+| `processed_dir` | `data/processed` | Where token caches are written |
+| `include_styles` | `[Classical, Jazz, Blues]` | Only read these subfolders; `[]` = all |
+| `grid` | `0.25` | Quantization step in beats. 0.25 = 16th note, 0.5 = 8th |
+| `tempo_map` | `true` | Convert seconds to beats through every tempo change, not just the first |
+| `min_duration` | `0.125` | Drop notes shorter than this many beats |
+| `min_events` | `50` | Drop pieces with fewer notes than this |
+| `time_signatures` | `[4/4, 3/4, 2/4]` | Keep a piece only if every signature it uses is listed; `[]` = all |
+| `track_strategy` | `merge` | `merge` all non-drum tracks, or keep only the `densest` one |
+| `val_split`, `test_split` | `0.1`, `0.1` | Fraction of pieces held out for validation / test |
+| `split_seed` | `1337` | Shuffle seed for the split; same seed gives the same split every run |
 
----
+### `augment` -- transposition of the training split
+
+| Key | v5 | Meaning |
+|---|---|---|
+| `enabled` | `true` | Turn augmentation on or off |
+| `transpose_range` | `[-6, 6]` | Semitone shifts applied to each training piece; [-6, 6] = 13 keys |
+| `pitch_range` | `[21, 108]` | Piano range; a transposed copy with any note outside it is dropped |
+
+### `encoding` -- music to tokens (seam 1)
+
+| Key | v5 | Meaning |
+|---|---|---|
+| `scheme` | `note_chord` | `note_chord` \| `interval` \| `pitch_duration` \| `event` |
+| `include_duration` | `false` | Put note length inside the symbol. `true` made 363,455 symbols |
+| `style_tokens` | `true` | Start each piece with `<STYLE:x>` |
+| `run_length_rests` | `true` | One `<REST:k>` per silence instead of k separate `<REST>` tokens |
+| `max_rest_run` | `16` | Largest k in a single rest token (16 = one 4/4 bar); longer gaps use several |
+| `min_freq` | `10` | Symbols seen fewer times in training become `<UNK>`; 1 = keep all |
+| `max_size` | `0` | Cap on vocabulary size; 0 = no cap |
+
+### `model` -- the network (seam 2)
+
+| Key | v5 | Meaning |
+|---|---|---|
+| `arch` | `lstm` | `lstm` \| `transformer` |
+| `seq_len` | `256` | Context length in tokens, about 93 beats or 23 bars of 4/4 |
+| `window_stride` | `128` | Tokens between consecutive training windows; 128 = half overlap |
+| `window_cover_tail` | `true` | Add one window aligned to each piece's end, so endings are trained on |
+| `embed_dim` | `256` | Length of each symbol's learned vector |
+| `hidden_dim` | `512` | LSTM memory width per layer |
+| `num_layers` | `3` | Number of stacked LSTM layers |
+| `dropout` | `0.3` | Fraction of activations zeroed during training, to reduce overfitting |
+| `output` | `adaptive` | `full` softmax, or `adaptive` (41% faster per batch, 1/5 the GPU memory) |
+| `adaptive_cutoffs` | `[2000, 10000]` | Cluster boundaries by frequency rank: head = 2,000 most common symbols (89% of targets) |
+| `adaptive_div_value` | `4.0` | Each rarer cluster uses vectors 4x narrower |
+| `num_heads` | `8` | Transformer only: attention heads |
+
+### `train` -- the training loop
+
+| Key | v5 | Meaning |
+|---|---|---|
+| `batch_size` | `48` | Windows per optimizer step; limited by GPU memory (12 GB card) |
+| `epochs` | `60` | Upper limit; early stopping normally ends the run much sooner |
+| `lr` | `0.001` | Adam learning rate (step size) |
+| `optimizer` | `adam` | `adam` \| `adamw` \| `rmsprop` |
+| `grad_clip` | `5.0` | Maximum gradient norm; stops one bad batch from wrecking the weights |
+| `weight_decay` | `0.0` | L2 penalty on weights; 0 = off |
+| `patience` | `3` | Stop after this many epochs without a validation improvement |
+| `min_delta` | `0.0` | How much validation loss must drop to count as an improvement |
+| `lr_schedule` | `plateau` | `none` \| `plateau` (multiply LR when stuck) \| `cosine` (smooth decay) |
+| `lr_factor`, `lr_patience` | `0.5`, `0` | Plateau: multiply LR by 0.5 on the first epoch without improvement |
+| `min_lr_ratio` | `0.05` | Cosine only: final LR as a fraction of `lr` |
+| `device` | `auto` | GPU if available, else CPU (`cuda` / `cpu` to force) |
+| `amp` | `off` | Mixed precision `off` \| `bf16` \| `fp16`. bf16 hurt quality (val 5.35 vs 4.80) |
+| `tf32` | `default` | TF32 tensor-core math: `default` \| `on` \| `off` |
+| `compile` | `false` | `torch.compile` the loss; needs Triton, which this Windows venv lacks |
+| `num_workers` | `0` | DataLoader worker processes; keep 0 on Windows |
+| `checkpoint_dir` | `runs` | Checkpoints go to `runs/<name>/` |
+| `seed` | `1337` | Seed for weight initialisation and batch order |
+| `resume` | `false` | Continue from the newest checkpoint instead of starting over |
+
+### `generate` -- making new music
+
+| Key | v5 | Meaning |
+|---|---|---|
+| `num_tokens` | `500` | Tokens written per sample (about 45 bars) |
+| `num_samples` | `5` | Pieces per run (`--num-samples`) |
+| `temperature` | `0.9` | Below 1 = safer and more repetitive; above 1 = wilder; 0 = always the top token |
+| `top_k` | `0` | Sample only from the k most likely tokens; 0 = off |
+| `top_p` | `0.0` | Sample only from the smallest set covering this probability; 0 = off |
+| `seed_source` | `dataset` | Primer comes from the `dataset`, a `midi` file or an `audio` file |
+| `seed_path` | `null` | File used when `seed_source` is `midi` or `audio` (`--seed-midi`) |
+| `seed_split` | `val` | Dataset split the primer is drawn from; held out, so it cannot be recited |
+| `seed` | `null` | RNG seed; null = random, printed and put in the file name (`--seed`) |
+| `duration_fill` | `next_onset` | Let notes ring until the next onset; `grid` leaves 16th-note blips |
+| `max_fill_beats` | `4.0` | Longest a filled note may ring |
+| `program` | `0` | General MIDI instrument written into the .mid (0 = acoustic piano) |
+| `output_dir` | `data/generated` | Where `.mid` and `.txt` files are written |
+
+### `evaluate`
+
+| Key | v5 | Meaning |
+|---|---|---|
+| `reference` | `null` | Real-music corpus to compare against; null = the training split |
+
+### Files each stage writes
+
+| Path | Contents |
+|---|---|
+| `data/processed/<hash>/` | `train/val/test_tokens.npy` (all ids, concatenated), `*_lengths.npy` (length of each piece), `vocab.json`, `meta.json` (encoding settings, vocabulary size, piece counts) |
+| `runs/<name>/best.pt` | Weights of the best validation epoch, plus the config, its hash and Adam's state |
+| `runs/<name>/last.pt` | The most recent epoch, used by `resume` |
+| `runs/<name>/vocab.json` | The vocabulary the model was trained with |
+| `runs/<name>/history.csv` | One row per epoch: `train_loss`, `val_loss`, `val_ppl` (= e^val_loss), `lr`, `seconds`, `improved` (1 = best.pt saved) |
+| `data/generated/*.mid`, `*.txt` | Generated music and the raw token sequence behind it |
+| `data/generated/*.wav` | Audio, after `scripts/render_audio.py` |
 
 ## 6. Results
 

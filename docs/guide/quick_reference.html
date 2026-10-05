@@ -1,0 +1,236 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quick Reference</title>
+<style>
+  @page { size: A4; margin: 9mm 10mm; }
+  :root{ --ink:#1b1f24; --mute:#5b6470; --line:#d9dee5; --soft:#f4f6f9;
+    --p1:#2563eb; --p2:#0d9488; --p3:#7c3aed; --p4:#c26a06; --p5:#db2777; }
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);font:7.9pt/1.32 "Segoe UI",Calibri,Arial,sans-serif}
+  .page{page-break-after:always;break-after:page}
+  .page.last{page-break-after:auto;break-after:auto}
+  .last th,.last td{padding:1.2px 4px}
+  h1{font:700 15pt/1.1 Georgia,serif;margin:0}
+  h2{font:700 10pt/1.2 Georgia,serif;margin:6px 0 3px;padding-bottom:2px;border-bottom:2px solid var(--c,#444)}
+  p{margin:0 0 4px}
+  ul{margin:0 0 4px;padding-left:13px} li{margin:0}
+  code{font-family:Consolas,monospace;font-size:7.4pt;background:var(--soft);padding:0 2px;border-radius:2px}
+  .top{display:flex;align-items:baseline;gap:10px;border-bottom:3px solid #1b1f24;padding-bottom:3px;margin-bottom:5px}
+  .top .sub{color:var(--mute);font-size:8.4pt}
+  .top .pg{margin-left:auto;color:var(--mute);font-size:8pt}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stage{border:1px solid var(--line);border-left:4px solid var(--c);border-radius:3px;padding:3px 6px;margin-bottom:4px;break-inside:avoid}
+  .stage .h{display:flex;gap:6px;align-items:baseline}
+  .stage .n{background:var(--c);color:#fff;font-weight:700;border-radius:8px;padding:0 6px;font-size:7.4pt}
+  .stage .t{font-weight:700;font-size:8.5pt}
+  .stage .f{margin-left:auto;color:var(--mute);font-family:Consolas,monospace;font-size:7pt}
+  .io{color:var(--mute);font-size:7.3pt;margin:1px 0 2px}
+  table{border-collapse:collapse;width:100%;font-size:7.3pt;margin:0 0 4px}
+  th,td{border:1px solid var(--line);padding:1.5px 4px;text-align:left;vertical-align:top}
+  th{background:var(--soft)}
+  td.k{font-family:Consolas,monospace;font-size:7pt;white-space:nowrap}
+  td.v{font-family:Consolas,monospace;font-size:7pt;font-weight:700}
+  table.pt{table-layout:fixed} table.pt td.k{white-space:normal;overflow-wrap:anywhere}
+  tr.sec td{background:#eef1f5;font-weight:700;font-size:7.6pt}
+  .note{background:var(--soft);border-radius:3px;padding:3px 6px;margin:3px 0}
+  svg text{font-family:"Segoe UI",Arial,sans-serif}
+  .p1{--c:var(--p1)} .p2{--c:var(--p2)} .p3{--c:var(--p3)} .p4{--c:var(--p4)} .p5{--c:var(--p5)}
+</style>
+</head>
+<body>
+
+<!-- ======================= PAGE 1: HOW IT WORKS ======================= -->
+<section class="page">
+  <div class="top"><h1>Symbolic Music Generation with LSTMs</h1><span class="sub">Quick reference: how it works, end to end</span><span class="pg">1 / 2</span></div>
+  <p><b>The idea:</b> treat music like text. Every note, chord or silence becomes a <i>token</i>, and an LSTM learns to predict the next token. To compose, it predicts one token, appends it, and repeats. All numbers below are the final model (<b>v5</b>, <code>configs/adl_mixed.yaml</code>).</p>
+
+  <svg viewBox="0 0 760 70" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;margin:2px 0 4px">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#5b6470"/></marker></defs>
+    <g font-size="9.5" text-anchor="middle">
+      <rect x="2" y="8" width="72" height="40" rx="5" fill="#e8f0fe" stroke="#2563eb"/><text x="38" y="25" font-weight="700">MIDI</text><text x="38" y="39" font-size="8" fill="#5b6470">2,019 files</text>
+      <rect x="86" y="8" width="72" height="40" rx="5" fill="#e0f4f1" stroke="#0d9488"/><text x="122" y="25" font-weight="700">① Parse</text><text x="122" y="39" font-size="8" fill="#5b6470">1,654 pieces</text>
+      <rect x="170" y="8" width="72" height="40" rx="5" fill="#e0f4f1" stroke="#0d9488"/><text x="206" y="25" font-weight="700">② Split</text><text x="206" y="39" font-size="8" fill="#5b6470">1,324/162/161</text>
+      <rect x="254" y="8" width="72" height="40" rx="5" fill="#e0f4f1" stroke="#0d9488"/><text x="290" y="25" font-weight="700">③ Augment</text><text x="290" y="39" font-size="8" fill="#5b6470">15,745 train</text>
+      <rect x="338" y="8" width="72" height="40" rx="5" fill="#efe9fd" stroke="#7c3aed"/><text x="374" y="25" font-weight="700">④ Encode</text><text x="374" y="39" font-size="8" fill="#5b6470">symbols</text>
+      <rect x="422" y="8" width="72" height="40" rx="5" fill="#efe9fd" stroke="#7c3aed"/><text x="458" y="25" font-weight="700">⑤ Vocab</text><text x="458" y="39" font-size="8" fill="#5b6470">37,020 ids</text>
+      <rect x="506" y="8" width="72" height="40" rx="5" fill="#efe9fd" stroke="#7c3aed"/><text x="542" y="25" font-weight="700">⑥ Windows</text><text x="542" y="39" font-size="8" fill="#5b6470">256 tokens</text>
+      <rect x="590" y="8" width="72" height="40" rx="5" fill="#fdf1e2" stroke="#c26a06"/><text x="626" y="25" font-weight="700">⑦⑧ Train</text><text x="626" y="39" font-size="8" fill="#5b6470">best.pt</text>
+      <rect x="674" y="8" width="84" height="40" rx="5" fill="#fde7f1" stroke="#db2777"/><text x="716" y="25" font-weight="700">⑨⑩⑪ Output</text><text x="716" y="39" font-size="8" fill="#5b6470">.mid .wav score</text>
+      <line x1="74" y1="28" x2="85" y2="28" stroke="#5b6470" marker-end="url(#a)"/><line x1="158" y1="28" x2="169" y2="28" stroke="#5b6470" marker-end="url(#a)"/><line x1="242" y1="28" x2="253" y2="28" stroke="#5b6470" marker-end="url(#a)"/><line x1="326" y1="28" x2="337" y2="28" stroke="#5b6470" marker-end="url(#a)"/><line x1="410" y1="28" x2="421" y2="28" stroke="#5b6470" marker-end="url(#a)"/><line x1="494" y1="28" x2="505" y2="28" stroke="#5b6470" marker-end="url(#a)"/><line x1="578" y1="28" x2="589" y2="28" stroke="#5b6470" marker-end="url(#a)"/><line x1="662" y1="28" x2="673" y2="28" stroke="#5b6470" marker-end="url(#a)"/>
+      <text x="206" y="63" font-size="8" fill="#5b6470">main.py prepare  (cached in data/processed/&lt;hash&gt;/)</text>
+      <text x="584" y="63" font-size="8" fill="#5b6470">main.py train → runs/&lt;name&gt;/ · main.py generate / evaluate</text>
+    </g>
+  </svg>
+
+  <div class="cols">
+  <div>
+    <div class="stage p2"><div class="h"><span class="n">1</span><span class="t">Parse and quantize</span><span class="f">src/data/parse.py</span></div>
+      <div class="io">MIDI file → <code>Piece</code> (list of <code>NoteEvent(pitch, start, duration, velocity)</code>, times in beats)</div>
+      <ul><li>Reads with <code>pretty_midi</code>; merges all non-drum tracks into one stream (all ADL tracks are piano).</li>
+      <li>Converts seconds → beats through every tempo change (<code>tempo_map</code>), then snaps start and length to a 16th-note grid (0.25 beat).</li>
+      <li>Drops: pieces with a time signature other than 4/4, 3/4, 2/4; notes &lt; 0.125 beat; pieces &lt; 50 notes. Merges the same pitch struck twice at once.</li>
+      <li>Style label = top folder name (Classical / Jazz / Blues). 11,073 ADL files → 2,019 in these genres → <b>1,654 kept</b> (1.88 M notes).</li></ul></div>
+
+    <div class="stage p2"><div class="h"><span class="n">2</span><span class="t">Split by piece</span><span class="f">augment.split_pieces</span></div>
+      <ul><li>Fixed shuffle (seed 1337) → 80 / 10 / 10 % train / val / test, by <i>whole piece</i>.</li>
+      <li>Drops val/test pieces that duplicate a training piece, even transposed → <b>1,324 / 162 / 161</b>.</li>
+      <li>Done <b>before</b> augmenting, so no version of a held-out song leaks into training.</li></ul></div>
+
+    <div class="stage p2"><div class="h"><span class="n">3</span><span class="t">Augment (train only)</span><span class="f">augment.transpose_augment</span></div>
+      <ul><li>Adds copies shifted −6 … +6 semitones (13 keys). A copy is dropped if any note leaves piano range 21–108.</li>
+      <li>1,324 → <b>15,745</b> training pieces. Teaches patterns independent of key.</li></ul></div>
+
+    <div class="stage p3"><div class="h"><span class="n">4</span><span class="t">Encode to symbols</span><span class="f">src/data/encode.py</span></div>
+      <div class="io">Piece → <code>["&lt;STYLE:Jazz&gt;", "60.64.67", "&lt;REST:2&gt;", "62", …]</code></div>
+      <ul><li><b>note_chord</b>: all notes starting together = one symbol, pitches joined by dots. Each note/chord symbol advances the clock one 16th.</li>
+      <li>Silence = one run-length rest <code>&lt;REST:k&gt;</code> (k = 2…16 steps; <code>&lt;REST&gt;</code> = 1). Cut rests from 56 % to 36 % of tokens.</li>
+      <li>No duration in the symbol (it would make 363,455 symbols). Durations are rebuilt at playback (step 10).</li>
+      <li>Other schemes (config switch): <code>interval</code>, <code>pitch_duration</code>, <code>event</code>.</li></ul></div>
+
+    <div class="stage p3"><div class="h"><span class="n">5</span><span class="t">Vocabulary</span><span class="f">src/data/vocab.py</span></div>
+      <ul><li>Symbol ↔ integer id, from the <b>training split only</b>, in <code>sorted()</code> order. Reserved: <code>&lt;PAD&gt;</code>0 <code>&lt;UNK&gt;</code>1 <code>&lt;BOS&gt;</code>2 <code>&lt;EOS&gt;</code>3 <code>&lt;REST&gt;</code>4.</li>
+      <li>Symbols seen &lt; 10 times → <code>&lt;UNK&gt;</code> (~4 % of tokens). Result: <b>37,020</b> symbols, 12.8 M training tokens.</li>
+      <li>Saved as <code>vocab.json</code> beside the model; the model never runs with a different vocabulary.</li></ul></div>
+  </div>
+  <div>
+    <div class="stage p3"><div class="h"><span class="n">6</span><span class="t">Windows and batches</span><span class="f">src/data/dataset.py</span></div>
+      <ul><li>Each piece is cut into 256-token windows every 128 tokens (half overlap), plus one window aligned to the end. Never crosses into another piece.</li>
+      <li><b>Teacher forcing:</b> <code>y</code> = <code>x</code> shifted one step left, so every position is a target (256 per window).</li>
+      <li>Shuffled batches of 48 → tensors <code>x, y : [48, 256]</code>.</li></ul></div>
+
+    <div class="stage p4"><div class="h"><span class="n">7</span><span class="t">Model: MusicLSTM</span><span class="f">src/models/lstm.py</span></div>
+      <table>
+        <tr><th>Layer</th><th>Shape</th><th>Params</th></tr>
+        <tr><td>Embedding</td><td>37,020 → 256</td><td>9.5 M</td></tr>
+        <tr><td>LSTM × 3 (dropout 0.3 between)</td><td>256 → 512 → 512 → 512</td><td>5.8 M</td></tr>
+        <tr><td>Dropout 0.3 · Linear · ReLU</td><td>512 → 256</td><td>0.13 M</td></tr>
+        <tr><td>Adaptive softmax (head 2,000 · 8,000 · 27,020)</td><td>256 → 37,020</td><td>1.48 M</td></tr>
+        <tr><td colspan="2"><b>Total</b></td><td><b>16.87 M</b></td></tr>
+      </table>
+      <ul><li>Output <code>[B, 256, 37,020]</code>: a probability for every symbol at every position.</li>
+      <li>Init: orthogonal recurrent weights, forget-gate bias 1 (the cell starts out remembering).</li></ul></div>
+
+    <div class="stage p4"><div class="h"><span class="n">8</span><span class="t">Training loop</span><span class="f">src/train.py</span></div>
+      <ul><li>Per batch: forward → cross-entropy over all positions (<code>&lt;PAD&gt;</code> ignored) → backprop through time → clip gradient norm to 5 → Adam step (lr 0.001).</li>
+      <li>Per epoch: validation loss. Better → save <code>best.pt</code>. Not better → halve the LR; 3 epochs without improvement → stop.</li>
+      <li>v5: best val loss <b>3.615</b> at epoch 3, stopped at epoch 6; ~106 s/epoch on an RTX 5070 (~11 min total).</li></ul></div>
+
+    <div class="stage p5"><div class="h"><span class="n">9</span><span class="t">Generate</span><span class="f">generate.py · sampling.py</span></div>
+      <ul><li>Load <code>best.pt</code> + <code>vocab.json</code> (refuses if the data hash differs). Prime with a 256-token excerpt from the <b>validation</b> split.</li>
+      <li>Loop 500×: get next-token probabilities → ban <code>&lt;PAD BOS EOS UNK STYLE&gt;</code> → divide by temperature 0.9 → random draw → feed back (hidden state carried, one token per step).</li>
+      <li>Writes <code>&lt;name&gt;_T0.90_seed&lt;seed&gt;_&lt;i&gt;.mid</code> + <code>.txt</code> of tokens. <code>--seed &lt;seed&gt;</code> reproduces it.</li></ul></div>
+
+    <div class="stage p5"><div class="h"><span class="n">10</span><span class="t">Decode and render audio</span><span class="f">decode.py · render_audio.py</span></div>
+      <ul><li>Tokens → notes (each one 16th long) → <code>fill_durations</code> lets each note ring until the next onset (max 4 beats). This is what removes the staccato sound.</li>
+      <li><code>render_audio.py</code>: numpy piano synth (decaying partials, reverb, −14 dBFS) → 44.1 kHz stereo WAV. <code>--instrument piano|epiano|organ</code>.</li></ul></div>
+
+    <div class="stage p5"><div class="h"><span class="n">11</span><span class="t">Evaluate</span><span class="f">src/evaluate.py</span></div>
+      <ul><li>Scores generated MIDI against real music: in-key 0.884 (real 0.84–0.88, random 0.583), plus variety, rhythm, repetition and copy checks. See page 2.</li></ul></div>
+  </div>
+  </div>
+</section>
+
+<!-- ======================= PAGE 2: PARAMETERS ======================= -->
+<section class="page last">
+  <div class="top"><h1>Parameters, outputs and what the numbers mean</h1><span class="pg">2 / 2</span></div>
+  <p><b>v5</b> = value in <code>configs/adl_mixed.yaml</code> (falls back to <code>configs/default.yaml</code>). Change any value without editing a file: <code>--set section.key=value</code>. Settings in <b>data / augment / encoding</b> are hashed into the cache folder name, so changing them rebuilds the data.</p>
+  <div class="cols">
+  <div>
+  <table class="pt">
+    <tr><th style="width:31%">Key</th><th style="width:19%">v5</th><th>What it does / what the value means</th></tr>
+    <tr class="sec"><td colspan="3">data — what music is read and how</td></tr>
+    <tr><td class="k">raw_dir</td><td class="v">data/raw/adl</td><td>Folder of MIDI; subfolders = styles</td></tr>
+    <tr><td class="k">include_styles</td><td class="v">Classical, Jazz, Blues</td><td>Only these subfolders; <code>[]</code> = all</td></tr>
+    <tr><td class="k">grid</td><td class="v">0.25</td><td>Quantize step in beats. 0.25 = 16th note, 0.5 = 8th</td></tr>
+    <tr><td class="k">tempo_map</td><td class="v">true</td><td>Follow every tempo change, not just the first</td></tr>
+    <tr><td class="k">min_duration</td><td class="v">0.125</td><td>Drop notes shorter than this (beats)</td></tr>
+    <tr><td class="k">min_events</td><td class="v">50</td><td>Drop pieces with fewer notes</td></tr>
+    <tr><td class="k">time_signatures</td><td class="v">[4/4, 3/4, 2/4]</td><td>Keep a piece only if every signature is listed</td></tr>
+    <tr><td class="k">track_strategy</td><td class="v">merge</td><td><code>merge</code> all tracks, or keep the <code>densest</code></td></tr>
+    <tr><td class="k">val_split,<br>test_split</td><td class="v">0.1, 0.1</td><td>Fraction of pieces held out</td></tr>
+    <tr><td class="k">split_seed</td><td class="v">1337</td><td>Same seed → same split every run</td></tr>
+    <tr class="sec"><td colspan="3">augment — transposition of the training split</td></tr>
+    <tr><td class="k">enabled</td><td class="v">true</td><td>Turn augmentation on/off</td></tr>
+    <tr><td class="k">transpose_range</td><td class="v">[-6, 6]</td><td>Semitone shifts; [-6, 6] = 13 keys per piece</td></tr>
+    <tr><td class="k">pitch_range</td><td class="v">[21, 108]</td><td>Piano range; copies leaving it are dropped</td></tr>
+    <tr class="sec"><td colspan="3">encoding — music → tokens (seam 1)</td></tr>
+    <tr><td class="k">scheme</td><td class="v">note_chord</td><td><code>note_chord</code> | <code>interval</code> | <code>pitch_duration</code> | <code>event</code></td></tr>
+    <tr><td class="k">include_duration</td><td class="v">false</td><td>Put note length in the symbol (true → 363k symbols)</td></tr>
+    <tr><td class="k">style_tokens</td><td class="v">true</td><td>Start each piece with <code>&lt;STYLE:x&gt;</code></td></tr>
+    <tr><td class="k">run_length_rests</td><td class="v">true</td><td>One <code>&lt;REST:k&gt;</code> per silence, not k × <code>&lt;REST&gt;</code></td></tr>
+    <tr><td class="k">max_rest_run</td><td class="v">16</td><td>Largest k in one rest token (16 = one 4/4 bar)</td></tr>
+    <tr><td class="k">min_freq</td><td class="v">10</td><td>Symbols seen fewer times → <code>&lt;UNK&gt;</code>; 1 = keep all</td></tr>
+    <tr><td class="k">max_size</td><td class="v">0</td><td>Cap vocabulary size; 0 = no cap</td></tr>
+    <tr class="sec"><td colspan="3">model — the network (seam 2)</td></tr>
+    <tr><td class="k">arch</td><td class="v">lstm</td><td><code>lstm</code> | <code>transformer</code></td></tr>
+    <tr><td class="k">seq_len</td><td class="v">256</td><td>Context in tokens ≈ 93 beats ≈ 23 bars of 4/4</td></tr>
+    <tr><td class="k">window_stride</td><td class="v">128</td><td>Step between windows; 128 = half overlap</td></tr>
+    <tr><td class="k">window_cover_tail</td><td class="v">true</td><td>Extra window at each piece's end</td></tr>
+    <tr><td class="k">embed_dim</td><td class="v">256</td><td>Size of each symbol's learned vector</td></tr>
+    <tr><td class="k">hidden_dim</td><td class="v">512</td><td>LSTM memory width per layer</td></tr>
+    <tr><td class="k">num_layers</td><td class="v">3</td><td>Stacked LSTM layers</td></tr>
+    <tr><td class="k">dropout</td><td class="v">0.3</td><td>Fraction of activations zeroed in training (fights overfitting)</td></tr>
+    <tr><td class="k">output</td><td class="v">adaptive</td><td><code>full</code> softmax or <code>adaptive</code> (41 % faster, 1/5 memory)</td></tr>
+    <tr><td class="k">adaptive_cutoffs</td><td class="v">[2000, 10000]</td><td>Head = 2,000 most common symbols (89 % of targets)</td></tr>
+    <tr><td class="k">adaptive_div_value</td><td class="v">4.0</td><td>Each rarer cluster gets 4× narrower vectors</td></tr>
+    <tr><td class="k">num_heads</td><td class="v">8</td><td>Transformer only: attention heads</td></tr>
+  </table>
+  <h2 style="--c:#1b1f24">Files it writes</h2>
+  <table>
+    <tr><td class="k">data/processed/&lt;hash&gt;/</td><td><code>*_tokens.npy</code> ids, <code>vocab.json</code>, <code>meta.json</code> (settings, sizes)</td></tr>
+    <tr><td class="k">runs/&lt;name&gt;/best.pt</td><td>Best weights + config + Adam state; <code>last.pt</code> = latest epoch</td></tr>
+    <tr><td class="k">runs/&lt;name&gt;/history.csv</td><td>Per epoch: train_loss, val_loss, val_ppl, lr, seconds, improved (1 = saved)</td></tr>
+  </table>
+  </div>
+  <div>
+  <table class="pt">
+    <tr><th style="width:31%">Key</th><th style="width:19%">v5</th><th>What it does / what the value means</th></tr>
+    <tr class="sec"><td colspan="3">train — the training loop</td></tr>
+    <tr><td class="k">batch_size</td><td class="v">48</td><td>Windows per step; limited by GPU memory (12 GB)</td></tr>
+    <tr><td class="k">epochs</td><td class="v">60</td><td>Upper limit; early stopping ends sooner</td></tr>
+    <tr><td class="k">lr</td><td class="v">0.001</td><td>Adam learning rate (step size)</td></tr>
+    <tr><td class="k">optimizer</td><td class="v">adam</td><td><code>adam</code> | <code>adamw</code> | <code>rmsprop</code></td></tr>
+    <tr><td class="k">grad_clip</td><td class="v">5.0</td><td>Max gradient norm; stops one bad batch wrecking weights</td></tr>
+    <tr><td class="k">weight_decay</td><td class="v">0.0</td><td>L2 penalty on weights; 0 = off</td></tr>
+    <tr><td class="k">patience</td><td class="v">3</td><td>Stop after this many epochs without improvement</td></tr>
+    <tr><td class="k">min_delta</td><td class="v">0.0</td><td>How much val must drop to count as better</td></tr>
+    <tr><td class="k">lr_schedule</td><td class="v">plateau</td><td><code>none</code> | <code>plateau</code> (×0.5 when stuck) | <code>cosine</code></td></tr>
+    <tr><td class="k">lr_factor,<br>lr_patience</td><td class="v">0.5, 0</td><td>Multiply LR by 0.5 on the first stale epoch</td></tr>
+    <tr><td class="k">device</td><td class="v">auto</td><td>GPU if available, else CPU</td></tr>
+    <tr><td class="k">amp</td><td class="v">off</td><td>Mixed precision; bf16 hurt quality (5.35 vs 4.80)</td></tr>
+    <tr><td class="k">seed</td><td class="v">1337</td><td>Weight init and batch order</td></tr>
+    <tr><td class="k">resume</td><td class="v">false</td><td>Continue from the last checkpoint</td></tr>
+    <tr class="sec"><td colspan="3">generate — making new music</td></tr>
+    <tr><td class="k">num_tokens</td><td class="v">500</td><td>Tokens to write per sample (~45 bars)</td></tr>
+    <tr><td class="k">num_samples</td><td class="v">5</td><td>Pieces per run (<code>--num-samples</code>)</td></tr>
+    <tr><td class="k">temperature</td><td class="v">0.9</td><td>&lt;1 safer and more repetitive, &gt;1 wilder; 0 = always top token</td></tr>
+    <tr><td class="k">top_k, top_p</td><td class="v">0, 0.0</td><td>Keep only top k / top p probability mass; 0 = off</td></tr>
+    <tr><td class="k">seed_source</td><td class="v">dataset</td><td>Primer from <code>dataset</code>, a <code>midi</code> or an <code>audio</code> file</td></tr>
+    <tr><td class="k">seed_split</td><td class="v">val</td><td>Prime from held-out music, so it can't recite training</td></tr>
+    <tr><td class="k">seed</td><td class="v">null</td><td>RNG seed; null = random (printed, and in the file name)</td></tr>
+    <tr><td class="k">duration_fill</td><td class="v">next_onset</td><td>Notes ring to the next onset; <code>grid</code> = 16th blips</td></tr>
+    <tr><td class="k">max_fill_beats</td><td class="v">4.0</td><td>Longest a filled note may ring</td></tr>
+    <tr><td class="k">program</td><td class="v">0</td><td>General MIDI instrument in the .mid (0 = piano)</td></tr>
+  </table>
+
+  <h2 style="--c:#1b1f24">What the result numbers mean</h2>
+  <table>
+    <tr><th>Number</th><th>Meaning</th><th>v5</th></tr>
+    <tr><td>val loss</td><td>Avg. surprise on held-out music (cross-entropy). Lower = better</td><td>3.615</td></tr>
+    <tr><td>perplexity</td><td>e<sup>loss</sup>: like choosing among this many symbols</td><td>37 / 37,020</td></tr>
+    <tr><td>in_key_pct</td><td>Notes inside the detected key. Random 0.583, real 0.84–0.88</td><td>0.884</td></tr>
+    <tr><td>distinct_n</td><td>Share of unique n-note patterns (variety)</td><td>0.74</td></tr>
+    <tr><td>rhythm_div</td><td>Variety of gaps between notes (real 0.394)</td><td>0.363</td></tr>
+    <tr><td>repetition_rate</td><td>Same note repeated at once (real 0.028)</td><td>0.055</td></tr>
+  </table>
+
+
+  <div class="note"><b>Run:</b> <code>venv\Scripts\python.exe main.py --config configs/adl_mixed.yaml --set name=adl_mixed_lstm_v6</code> → <code>scripts/render_audio.py data/generated</code> → <code>main.py evaluate --config …</code>. Quick check: <code>main.py demo</code>. Tests: <code>-m pytest tests -q</code>. Output lands in <code>data/generated/</code>: <code>.mid</code> music, <code>.txt</code> tokens, <code>.wav</code> after rendering.</div>
+  </div>
+  </div>
+</section>
+</body>
+</html>
+
